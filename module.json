@@ -8,24 +8,28 @@
   "minimumCoreVersion": "11",
   "compatibility": {
     "minimum": "11.302",
-    "verified": "12",
-    "maximum": "13"
+    "verified": "13",
+    "maximum": "14"
   },
   "authors": [
     {
       "name": "Faey Umbrea",
       "url": "https://github.com/FaeyUmbrea/",
       "discord": "Faey#0001"
+    },
+    {
+      "name": "Mappboy",
+      "url": "https://github.com/Mappboy/"
     }
   ],
   "relationships": {
-    "requires": [{
-      "id": "lib-wrapper"
-    }]
+    "requires": [
+      {
+        "id": "lib-wrapper"
+      }
+    ]
   },
-  "conflicts": [
-    
-  ],
+  "conflicts": [],
   "esmodules": [
     "scripts/module.js"
   ],

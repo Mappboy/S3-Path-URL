@@ -8,7 +8,9 @@ class S3Utils {
         CUSTOM_PREFIX: "custom_prefix",
         CUSTOM_STYLE: "custom_style",
         BUCKETNAME: "bucketname",
-        CUSTOMBUCKET: "custombucket"
+        CUSTOMBUCKET: "custombucket",
+        USE_CLOUDFRONT: "use_cloudfront",
+        CLOUDFRONT_URL: "cloudfront_url"
     }
     static ID = 's3-path-url'
 
@@ -40,10 +42,13 @@ class S3Utils {
             prevHostname = game.data.files.s3.endpoint.hostname;
             prevProtocol = game.data.files.s3.endpoint.protocol;
 
-            game.data.files.s3.endpoint.hostname = game.settings.get(this.ID, this.SETTINGS.CUSTOM_PREFIX).split("//")[1];
-            game.data.files.s3.endpoint.host = game.settings.get(this.ID, this.SETTINGS.CUSTOM_PREFIX).split("//")[1];
-            game.data.files.s3.endpoint.href = game.settings.get(this.ID, this.SETTINGS.CUSTOM_PREFIX);
-            game.data.files.s3.endpoint.protocol = game.settings.get(this.ID, this.SETTINGS.CUSTOM_PREFIX).split('//')[0];
+            // Do not override endpoint if Cloudfront CDN is being used
+            if (!game.settings.get(this.ID, this.SETTINGS.USE_CLOUDFRONT)) {
+                game.data.files.s3.endpoint.hostname = game.settings.get(this.ID, this.SETTINGS.CUSTOM_PREFIX).split("//")[1];
+                game.data.files.s3.endpoint.host = game.settings.get(this.ID, this.SETTINGS.CUSTOM_PREFIX).split("//")[1];
+                game.data.files.s3.endpoint.href = game.settings.get(this.ID, this.SETTINGS.CUSTOM_PREFIX);
+                game.data.files.s3.endpoint.protocol = game.settings.get(this.ID, this.SETTINGS.CUSTOM_PREFIX).split('//')[0];
+            }
         }
 
     }
@@ -86,17 +91,39 @@ class S3Utils {
             hint: `S3_PATH_URL.settings.${this.SETTINGS.CUSTOMBUCKET}.Hint`,
             requiresReload: true
         });
+
+        game.settings.register(this.ID, this.SETTINGS.USE_CLOUDFRONT, {
+            name: `S3_PATH_URL.settings.${this.SETTINGS.USE_CLOUDFRONT}.Name`,
+            default: false,
+            type: Boolean,
+            scope: 'world',
+            config: true,
+            hint: `S3_PATH_URL.settings.${this.SETTINGS.USE_CLOUDFRONT}.Hint`,
+            requiresReload: true
+        });
+
+        game.settings.register(this.ID, this.SETTINGS.CLOUDFRONT_URL, {
+            name: `S3_PATH_URL.settings.${this.SETTINGS.CLOUDFRONT_URL}.Name`,
+            default: "https://d123.cloudfront.net",
+            type: String,
+            scope: 'world',
+            config: true,
+            hint: `S3_PATH_URL.settings.${this.SETTINGS.CLOUDFRONT_URL}.Hint`,
+            requiresReload: true
+        });
     }
 
     static registerWrappers(){
-        libWrapper.register(this.ID, "FilePicker.upload", async function (wrapped, ...args) {
+        const filePickerPath = foundry.applications?.apps?.FilePicker ? "foundry.applications.apps.FilePicker" : "FilePicker";
+
+        libWrapper.register(this.ID, `${filePickerPath}.upload`, async function (wrapped, ...args) {
             let result = await wrapped(...args);
             if (args[0] === "s3" && !!result.path) {
                 result.path = S3Utils.transformURL(result.path);
             }
             return result;
         }, libWrapper.WRAPPER);
-        libWrapper.register(this.ID, "FilePicker.browse", async function (wrapped, ...args) {
+        libWrapper.register(this.ID, `${filePickerPath}.browse`, async function (wrapped, ...args) {
             let result = await wrapped(...args);
             if (args[0] === "s3") {
                 result.files?.forEach((file, index) => {
@@ -105,7 +132,7 @@ class S3Utils {
             }
             return result;
         }, libWrapper.WRAPPER);
-        libWrapper.register(this.ID, "FilePicker.matchS3URL", function (wrapped, ...args){
+        libWrapper.register(this.ID, `${filePickerPath}.matchS3URL`, function (wrapped, ...args){
             let result = wrapped(...args);
             if(result){
                 if (game.settings.get('s3-path-url', "custom_style")&&game.settings.get('s3-path-url', "custombucket")){
@@ -137,14 +164,45 @@ class S3Utils {
     static transformURL(url) {
         if(game.settings.get('s3-path-url', this.SETTINGS.CUSTOM_STYLE)) {
             const splitHref = prevHref.split('//')
+            const isCloudfront = game.settings.get('s3-path-url', this.SETTINGS.USE_CLOUDFRONT);
+            let baseUrl = isCloudfront 
+                ? game.settings.get('s3-path-url', this.SETTINGS.CLOUDFRONT_URL) 
+                : game.data.files.s3.endpoint.href;
+                
+            // Ensure baseUrl ends with a slash if we're constructing paths with it later
+            if (baseUrl && !baseUrl.endsWith('/')) {
+                baseUrl += '/';
+            }
+
             if (url.startsWith(prevHref)) {
-                return url.replace(prevHref, game.data.files.s3.endpoint.href);
+                let formattedUrl = url.replace(prevHref, baseUrl);
+                
+                if (isCloudfront) {
+                    let bucketName = game.settings.get('s3-path-url', this.SETTINGS.BUCKETNAME);
+                    if (bucketName) {
+                        // Strip the bucket name and following slash from the Cloudfront URL path
+                        formattedUrl = formattedUrl.replace(`${baseUrl}${bucketName}/`, baseUrl);
+                    }
+                }
+                
+                return formattedUrl;
             }
             if (url.includes(splitHref[1])){
                 // if URL has been mangled by some other module, discard anything before the href without the protocol.
                 let path = url.split(splitHref[1])[1]
                 path = path.startsWith("/") ? path : "/" + path;
-                return game.data.files.s3.endpoint.href + path;
+                
+                let formattedUrl = baseUrl + path.substring(1); // remove leading slash from path since baseUrl has it
+
+                if (isCloudfront) {
+                    let bucketName = game.settings.get('s3-path-url', this.SETTINGS.BUCKETNAME);
+                    if (bucketName) {
+                        // Strip the bucket name from the reconstructed path
+                        formattedUrl = formattedUrl.replace(`${baseUrl}${bucketName}/`, baseUrl);
+                    }
+                }
+
+                return formattedUrl;
             }
         }
 
