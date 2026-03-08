@@ -7,6 +7,8 @@ This module allows for use of S3 Storage where the API Url and the Public URL do
 A lot of people, myself included, have bought budget object storage with an alternative provider,
 only to realize that their provider of choice does not support the format that foundry wants from us. 
 
+Added Cludfront suppport write to s3 read from different url. 
+
 ## How? 
 
 Foundry only ever actually touches the S3 API when you upload stuff or when you request a directory's item list. 
